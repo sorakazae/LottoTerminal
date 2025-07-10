@@ -51,6 +51,17 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
 
         captureSession.startRunning()
     }
+    
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let previewLayer = view.layer.sublayers?.first(where: { $0 is AVCaptureVideoPreviewLayer }) as? AVCaptureVideoPreviewLayer {
+            previewLayer.frame = view.layer.bounds
+
+            if let connection = previewLayer.connection, connection.isVideoOrientationSupported {
+                connection.videoOrientation = .landscapeRight  // 또는 .landscapeLeft
+            }
+        }
+    }
 
     func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
         if let metadataObject = metadataObjects.first,

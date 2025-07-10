@@ -20,15 +20,25 @@ struct ContentView: View {
                     Text("로또 QR 스캔 안내")
                         .font(.title2)
                         .bold()
-                    Text("1. QR 코드를 화면 오른쪽에 비춰주세요.")
+                    Text("1. QR 코드를 왼쪽 위의 모서리 뒷면에 있는 카메라에 비춰주세요.")
                     Text("2. 자동으로 인식되며 결과가 표시됩니다.")
                     Text("3. 매주 토요일 오후 8시 35분 경 추첨!")
+                    
+                    // 🔽 아래에 이미지 추가
+                    Image("scan_guide") // 이미지 이름
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(minWidth: 350, maxWidth: 400) // 이미지 크기 조절
+                        .cornerRadius(8)
+                        .padding(.top, 16)
+                    
                     Spacer()
                 }
                 .padding()
-                .frame(maxWidth: 300) // 왼쪽 폭 제한
+                .frame(minWidth: 350, maxWidth: 400) // 왼쪽 폭 제한
+                .layoutPriority(1) // 우선배치
 
-                // 오른쪽 카메라
+                // 오른쪽 카메라 영역
                 CameraView(scannedCode: $scannedCode)
                     .onChange(of: scannedCode) { newCode in
                         if !newCode.isEmpty {
@@ -60,47 +70,93 @@ struct ContentView: View {
             }
         }
     }
+    
+    
+    
+    func parseLottoQR(from url: String) -> (round: Int, games: [[Int]])? {
+        guard let components = URLComponents(string: url),
+              let vParam = components.queryItems?.first(where: { $0.name == "v" })?.value else {
+            return nil
+        }
+
+        guard let round = Int(vParam.prefix(4)) else { return nil }
+
+        let pattern = #"m(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})"#
+        let regex = try? NSRegularExpression(pattern: pattern)
+        let matches = regex?.matches(in: vParam, range: NSRange(location: 0, length: vParam.utf16.count)) ?? []
+
+        var games: [[Int]] = []
+
+        for match in matches {
+            var numbers: [Int] = []
+            for i in 1...6 {
+                if let range = Range(match.range(at: i), in: vParam) {
+                    let numStr = String(vParam[range])
+                    if let num = Int(numStr) {
+                        numbers.append(num)
+                    }
+                }
+            }
+            games.append(numbers.sorted())
+        }
+
+        return (round, games)
+    }
 
     func handleScanned(code: String) {
-        // 예시 URL: https://m.dhlottery.co.kr/?v=1100521824362738
-        guard let vParam = URLComponents(string: code)?
-                .queryItems?.first(where: { $0.name == "v" })?.value else {
-            resultMessage = "QR 코드에서 로또 정보를 찾을 수 없습니다."
+        // https://m.dhlottery.co.kr/qr.do?method=winQr&v=1125m152023263944m070827293643m161722303743m010821273639m2533344044450000000645.net
+        guard let result = parseLottoQR(from: code) else {
+            resultMessage = "QR 코드 파싱에 실패했습니다."
             showPopup = true
             return
         }
 
-        // 회차 추출 (앞 3자리)
-        let round = Int(vParam.prefix(3)) ?? -1
+        let round = result.round
+        let games = result.games
 
-        // 번호 6개 추출
-        let numbers = stride(from: 3, to: vParam.count, by: 2).compactMap {
-            let start = vParam.index(vParam.startIndex, offsetBy: $0)
-            let end = vParam.index(start, offsetBy: 2, limitedBy: vParam.endIndex) ?? vParam.endIndex
-            return Int(vParam[start..<end])
+        // [API 호출] - 회차별 당첨번호 가져오기
+        fetchLottoResult(for: round) { winning in
+            guard let winning = winning else {
+                resultMessage = "당첨 번호를 불러오는 데 실패했습니다."
+                showPopup = true
+                return
+            }
+
+            let winningNumbers = [
+                winning.drwtNo1, winning.drwtNo2, winning.drwtNo3,
+                winning.drwtNo4, winning.drwtNo5, winning.drwtNo6
+            ]
+            let bonus = winning.bnusNo
+
+            let labels = ["A", "B", "C", "D", "E"]
+            var messages: [String] = []
+
+            for (index, userNumbers) in games.enumerated() {
+                let matched = userNumbers.filter { winningNumbers.contains($0) }.count
+                let hasBonus = userNumbers.contains(bonus)
+                let label = index < labels.count ? labels[index] : "게임\(index+1)"
+
+                let resultText: String
+                switch matched {
+                case 6: resultText = "🎉 1등 당첨! 로또센터 방문이 필요합니다."
+                case 5: resultText = hasBonus ? "🎉 2등 당첨! 로또센터 방문이 필요합니다." : "축! 3등 당첨! 가까운 은행에서 수령 가능합니다."
+                case 4: resultText = "축! 4등 당첨! 판매인에게 당첨금을 수령받으세요."
+                case 3: resultText = "축! 5등 당첨! 판매인에게 당첨금을 수령받으세요."
+                default: resultText = "낙첨입니다."
+                }
+
+                messages.append("\(label) \(resultText)")
+            }
+
+            DispatchQueue.main.async {
+                resultMessage = """
+                \(round)회차 당첨 결과
+
+                \(messages.joined(separator: "\n"))
+                """
+                showPopup = true
+            }
         }
-
-        // 당첨 번호 불러오기 예시 (여기선 더미 사용)
-        let winningNumbers = [5, 11, 24, 33, 39, 44]    //회차별 당첨 번호를 데이터베이스에서 불러오기
-        let bonusNumber = 10
-
-        let matched = numbers.filter { winningNumbers.contains($0) }.count
-        let hasBonus = numbers.contains(bonusNumber)
-
-        let rank: String
-        switch matched {
-        case 6: rank = "경축! 1등 당첨! 농협 본점에서 당첨금을 수령하세요!"
-        case 5: rank = hasBonus ? "축! 2등 당첨! 가까운 농협중앙회에서 당첨금을 수령하세요!" : "축! 3등 당첨! 가까운 농협중앙회에서 당첨금을 수령하세요!"
-        case 4: rank = "축! 4등 당첨! 판매인으로부터 당첨금을 수령하세요!"
-        case 3: rank = "축! 5등 당첨! 판매인으로부터 당첨금을 수령하세요!"
-        default: rank = "낙첨입니다."
-        }
-
-        resultMessage = """
-        회차: \(round)회
-        선택번호: \(numbers.map { "\($0)" }.joined(separator: ", "))
-        결과: \(rank)
-        """
-        showPopup = true
     }
+    
 }
