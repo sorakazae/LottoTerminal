@@ -51,53 +51,76 @@ struct ContentView: View {
             // QR 인식 시 팝업
             if showPopup {
                 VStack(spacing: 16) {
-                    Text("🎉 인식 완료!")
+                    Text("추첨결과")
                         .font(.title)
                         .bold()
+                        .foregroundColor(.black)
                     Text(resultMessage)
                         .font(.body)
                         .multilineTextAlignment(.center)
-                    Button("닫기") {
-                        showPopup = false
-                        scannedCode = "" // 재스캔 허용
-                    }
+                        .foregroundColor(.black)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // 닫기 버튼 제거
                     .padding(.top, 8)
                 }
                 .padding()
                 .background(Color.white.opacity(0.9))
                 .cornerRadius(20)
                 .shadow(radius: 10)
+                .padding()
             }
         }
     }
     
     
-    
-    func parseLottoQR(from url: String) -> (round: Int, games: [[Int]])? {
+    func parseLottoQR(from url: String) -> (round: Int, games: [(type: String, numbers: [Int])])? {
         guard let components = URLComponents(string: url),
-              let vParam = components.queryItems?.first(where: { $0.name == "v" })?.value else {
+              let vParamRaw = components.queryItems?.first(where: { $0.name == "v" })?.value else {
             return nil
         }
 
+        let vParam = vParamRaw.replacingOccurrences(of: ".net", with: "")
+
         guard let round = Int(vParam.prefix(4)) else { return nil }
 
-        let pattern = #"m(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})"#
+        let pattern = #"[msq]\d+"# // ✅ m, s, q 모두 포함
         let regex = try? NSRegularExpression(pattern: pattern)
         let matches = regex?.matches(in: vParam, range: NSRange(location: 0, length: vParam.utf16.count)) ?? []
 
-        var games: [[Int]] = []
+        var games: [(String, [Int])] = []
 
         for match in matches {
-            var numbers: [Int] = []
-            for i in 1...6 {
-                if let range = Range(match.range(at: i), in: vParam) {
-                    let numStr = String(vParam[range])
+            if let range = Range(match.range, in: vParam) {
+                let block = String(vParam[range]) // 예: m253334404445
+                let typeChar = block.prefix(1)
+                let digits = block.dropFirst()
+
+                var type = "?"
+                switch typeChar {
+                case "m": type = "수동"
+                case "s": type = "반자동"
+                case "q": type = "자동"
+                default: break
+                }
+
+                var numbers: [Int] = []
+                var idx = digits.startIndex
+
+                for _ in 0..<6 {
+                    let nextIdx = digits.index(idx, offsetBy: 2, limitedBy: digits.endIndex) ?? digits.endIndex
+                    if idx >= digits.endIndex { break }
+
+                    let numStr = digits[idx..<nextIdx]
                     if let num = Int(numStr) {
                         numbers.append(num)
                     }
+                    idx = nextIdx
+                }
+
+                if numbers.count == 6 {
+                    games.append((type, numbers.sorted()))
                 }
             }
-            games.append(numbers.sorted())
         }
 
         return (round, games)
@@ -131,7 +154,8 @@ struct ContentView: View {
             let labels = ["A", "B", "C", "D", "E"]
             var messages: [String] = []
 
-            for (index, userNumbers) in games.enumerated() {
+            for (index, game) in games.enumerated() {
+                let (type, userNumbers) = game
                 let matched = userNumbers.filter { winningNumbers.contains($0) }.count
                 let hasBonus = userNumbers.contains(bonus)
                 let label = index < labels.count ? labels[index] : "게임\(index+1)"
@@ -145,7 +169,7 @@ struct ContentView: View {
                 default: resultText = "낙첨입니다."
                 }
 
-                messages.append("\(label) \(resultText)")
+                messages.append("\(label) [\(type)] - \(resultText)")
             }
 
             DispatchQueue.main.async {
@@ -155,6 +179,15 @@ struct ContentView: View {
                 \(messages.joined(separator: "\n"))
                 """
                 showPopup = true
+                
+                // 5초 후 자동 닫기
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    // 만약 아직 같은 결과가 표시중이라면 닫음
+                    if(showPopup) {
+                        showPopup = false
+                        scannedCode = "" // 다시 스캔 가능하게 초기화
+                    }
+                }
             }
         }
     }

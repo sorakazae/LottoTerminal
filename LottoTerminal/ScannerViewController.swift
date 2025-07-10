@@ -69,6 +69,11 @@ class ScannerViewController: UIViewController, AVCaptureMetadataOutputObjectsDel
            let stringValue = readableObject.stringValue {
             captureSession.stopRunning()
             delegate?.didFind(code: stringValue)
+            
+            // 5초 후 재시작
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                self.captureSession.startRunning()
+            }
         }
     }
 
