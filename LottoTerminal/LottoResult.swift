@@ -27,17 +27,16 @@ func fetchLottoResult(for round: Int, completion: @escaping (LottoResult?) -> Vo
     }
 
     URLSession.shared.dataTask(with: url) { data, response, error in
-        guard let data = data else {
-            completion(nil)
+        guard
+            error == nil,
+            let data = data,
+            let result = try? JSONDecoder().decode(LottoResult.self, from: data),
+            result.drwNo == round,
+            result.drwtNo1 != 0 // 당첨번호가 비어있지 않은지 체크
+        else {
+            completion(nil) // 실패로 간주
             return
         }
-
-        do {
-            let decoded = try JSONDecoder().decode(LottoResult.self, from: data)
-            completion(decoded)
-        } catch {
-            print("JSON 파싱 오류: \(error)")
-            completion(nil)
-        }
+        completion(result)
     }.resume()
 }

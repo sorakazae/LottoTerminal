@@ -17,12 +17,13 @@ struct ContentView: View {
             HStack {
                 // 왼쪽 설명 영역
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("로또 QR 스캔 안내")
+                    Text("로또 QR 당첨 확인")
                         .font(.title2)
                         .bold()
-                    Text("1. QR 코드를 왼쪽 위의 모서리 뒷면에 있는 카메라에 비춰주세요.")
-                    Text("2. 자동으로 인식되며 결과가 표시됩니다.")
-                    Text("3. 매주 토요일 오후 8시 35분 경 추첨!")
+                    Text("1. QR 코드를 좌측상단 후면에 있는 카메라에 비춥니다.")
+                    Text("2. 자동으로 인식되며 결과가 5초간 표시됩니다.")
+                    Text("⚠️ 결과는 참고용으로 실제 당첨을 보장하지 않습니다.")
+                    Text("ℹ️ 당첨금 수령을 위해 복권 판매자에게 당첨 용지를 제시하시기 바랍니다.")
                     
                     // 🔽 아래에 이미지 추가
                     Image("scan_guide") // 이미지 이름
@@ -97,9 +98,9 @@ struct ContentView: View {
 
                 var type = "?"
                 switch typeChar {
-                case "m": type = "수동"
+                case "m": type = "수  동"
                 case "s": type = "반자동"
-                case "q": type = "자동"
+                case "q": type = "자  동"
                 default: break
                 }
 
@@ -129,8 +130,7 @@ struct ContentView: View {
     func handleScanned(code: String) {
         // https://m.dhlottery.co.kr/qr.do?method=winQr&v=1125m152023263944m070827293643m161722303743m010821273639m2533344044450000000645.net
         guard let result = parseLottoQR(from: code) else {
-            resultMessage = "QR 코드 파싱에 실패했습니다."
-            showPopup = true
+            showResultPopup("로또 QR 코드가 아닙니다")
             return
         }
 
@@ -140,8 +140,7 @@ struct ContentView: View {
         // [API 호출] - 회차별 당첨번호 가져오기
         fetchLottoResult(for: round) { winning in
             guard let winning = winning else {
-                resultMessage = "당첨 번호를 불러오는 데 실패했습니다."
-                showPopup = true
+                showResultPopup("아직 발표되지 않은 회차이거나\n조회할 수 없는 회차입니다.")
                 return
             }
 
@@ -162,10 +161,10 @@ struct ContentView: View {
 
                 let resultText: String
                 switch matched {
-                case 6: resultText = "🎉 1등 당첨! 로또센터 방문이 필요합니다."
-                case 5: resultText = hasBonus ? "🎉 2등 당첨! 로또센터 방문이 필요합니다." : "축! 3등 당첨! 가까운 은행에서 수령 가능합니다."
-                case 4: resultText = "축! 4등 당첨! 판매인에게 당첨금을 수령받으세요."
-                case 3: resultText = "축! 5등 당첨! 판매인에게 당첨금을 수령받으세요."
+                case 6: resultText = "㊗️ 1등 당첨! 농협 본점에서 수령 가능합니다. ㊗️"
+                case 5: resultText = hasBonus ? "㊗️ 2등 당첨! 전국 농협에서 수령 가능합니다. ㊗️" : "🎉 3등 당첨! 전국 농협에서 수령 가능합니다. 🎉"
+                case 4: resultText = "🎉 4등 당첨! 복권 판매점에서 당첨금을 수령받으세요."
+                case 3: resultText = "🎉 5등 당첨! 복권 판매점에서 당첨금을 수령받으세요."
                 default: resultText = "낙첨입니다."
                 }
 
@@ -178,16 +177,24 @@ struct ContentView: View {
 
                 \(messages.joined(separator: "\n"))
                 """
-                showPopup = true
+                showResultPopup(resultMessage)
                 
-                // 5초 후 자동 닫기
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                    // 만약 아직 같은 결과가 표시중이라면 닫음
-                    if(showPopup) {
-                        showPopup = false
-                        scannedCode = "" // 다시 스캔 가능하게 초기화
-                    }
-                }
+                
+            }
+        }
+    }
+    
+    // 팝업 보여주기 공통
+    func showResultPopup(_ message: String){
+        resultMessage = message
+        showPopup = true
+        
+        // 5초 후 자동 닫기
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            // 만약 아직 같은 결과가 표시중이라면 닫음
+            if(showPopup) {
+                showPopup = false
+                scannedCode = "" // 다시 스캔 가능하게 초기화
             }
         }
     }
